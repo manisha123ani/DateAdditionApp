@@ -2,128 +2,150 @@ using System;
 
 namespace DateAdditionApp
 {
-    /// <summary>
-    /// Contains all date-math logic, built from scratch without using
-    /// DateTime or any date/time library. Kept separate from Program.cs
-    /// so it can be unit tested independently of console I/O.
-    /// </summary>
     public static class DateCalculator
     {
-        /// <summary>
-        /// Adds (or subtracts, if negative) the given number of days to a date,
-        /// one day at a time.
-        /// </summary>
-        public static (int day, int month, int year) AddDays(int day, int month, int year, int daysToAdd)
+        private static readonly int[] DaysInMonthNonLeap =
         {
-            if (!IsValidDate(day, month, year))
-            {
-                throw new ArgumentException("The date entered does not exist.");
-            }
+            31,28,31,30,31,30,31,31,30,31,30,31
+        };
 
-            if (daysToAdd >= 0)
-            {
-                for (int i = 0; i < daysToAdd; i++)
-                {
-                    day++;
+        private static readonly int[] DaysInMonthLeap =
+        {
+            31,29,31,30,31,30,31,31,30,31,30,31
+        };
 
-                    int maxDaysInMonth = GetDaysInMonth(month, year);
+        // Cumulative days before each month
+        private static readonly int[] MonthOffsetNonLeap =
+        {
+            0,31,59,90,120,151,181,212,243,273,304,334
+        };
 
-                    if (day > maxDaysInMonth)
-                    {
-                        day = 1;
-                        month++;
-
-                        if (month > 12)
-                        {
-                            month = 1;
-                            year++;
-                        }
-                    }
-                }
-            }
-            else
-            {
-                int daysToSubtract = -daysToAdd;
-
-                for (int i = 0; i < daysToSubtract; i++)
-                {
-                    day--;
-
-                    if (day < 1)
-                    {
-                        month--;
-
-                        if (month < 1)
-                        {
-                            month = 12;
-                            year--;
-                        }
-
-                        day = GetDaysInMonth(month, year);
-                    }
-                }
-            }
-
-            return (day, month, year);
-        }
+        private static readonly int[] MonthOffsetLeap =
+        {
+            0,31,60,91,121,152,182,213,244,274,305,335
+        };
 
         public static bool IsLeapYear(int year)
         {
-            return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+            return (year % 4 == 0 && year % 100 != 0)
+                   || (year % 400 == 0);
         }
 
         public static int GetDaysInMonth(int month, int year)
         {
-            if (month < 1 || month > 12)
-            {
-                throw new ArgumentOutOfRangeException(nameof(month), "Month must be between 1 and 12.");
-            }
-
-            int[] daysInMonth = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-
-            if (month == 2 && IsLeapYear(year))
-            {
-                return 29;
-            }
-
-            return daysInMonth[month - 1];
+            return IsLeapYear(year)
+                ? DaysInMonthLeap[month - 1]
+                : DaysInMonthNonLeap[month - 1];
         }
 
         public static bool IsValidDate(int day, int month, int year)
         {
             if (year < 1 || month < 1 || month > 12)
-            {
                 return false;
-            }
 
-            int maxDay = GetDaysInMonth(month, year);
-            return day >= 1 && day <= maxDay;
+            return day >= 1 && day <= GetDaysInMonth(month, year);
         }
 
-        /// <summary>
-        /// Parses a "dd/mm/yyyy" string. Returns false if the format or
-        /// the date itself is invalid.
-        /// </summary>
-        public static bool TryParseDate(string input, out int day, out int month, out int year)
+        // Date -> Day Number
+        private static long DateToDayNumber(int day, int month, int year)
+        {
+            long years = year - 1;
+
+            long totalDays =
+                years * 365 +
+                years / 4 -
+                years / 100 +
+                years / 400;
+
+            totalDays += IsLeapYear(year)
+                ? MonthOffsetLeap[month - 1]
+                : MonthOffsetNonLeap[month - 1];
+
+            totalDays += day;
+
+            return totalDays;
+        }
+
+        // Day Number -> Date
+        private static (int day, int month, int year) DayNumberToDate(long dayNumber)
+        {
+            int year = (int)(dayNumber / 365.2425) + 1;
+
+            long firstDayOfYear = DateToDayNumber(1, 1, year);
+
+            while (firstDayOfYear > dayNumber)
+            {
+                year--;
+                firstDayOfYear = DateToDayNumber(1, 1, year);
+            }
+
+            while (true)
+            {
+                long nextYear = DateToDayNumber(1, 1, year + 1);
+
+                if (nextYear > dayNumber)
+                    break;
+
+                year++;
+                firstDayOfYear = nextYear;
+            }
+
+            int dayOfYear = (int)(dayNumber - firstDayOfYear + 1);
+
+            int[] months = IsLeapYear(year)
+                ? DaysInMonthLeap
+                : DaysInMonthNonLeap;
+
+            int month = 1;
+
+            while (dayOfYear > months[month - 1])
+            {
+                dayOfYear -= months[month - 1];
+                month++;
+            }
+
+            return (dayOfYear, month, year);
+        }
+
+        public static (int day, int month, int year) AddDays(
+            int day,
+            int month,
+            int year,
+            int daysToAdd)
+        {
+            if (!IsValidDate(day, month, year))
+                throw new ArgumentException("Invalid Date");
+
+            long dayNumber = DateToDayNumber(day, month, year);
+
+            dayNumber += daysToAdd;
+
+            if (dayNumber <= 0)
+                throw new ArgumentException("Date out of range");
+
+            return DayNumberToDate(dayNumber);
+        }
+
+        public static bool TryParseDate(
+            string input,
+            out int day,
+            out int month,
+            out int year)
         {
             day = month = year = 0;
 
             if (string.IsNullOrWhiteSpace(input))
-            {
                 return false;
-            }
 
             string[] parts = input.Split('/');
 
-            if (parts.Length != 3
-                || !int.TryParse(parts[0], out day)
-                || !int.TryParse(parts[1], out month)
-                || !int.TryParse(parts[2], out year))
-            {
+            if (parts.Length != 3)
                 return false;
-            }
 
-            return IsValidDate(day, month, year);
+            return int.TryParse(parts[0], out day)
+                && int.TryParse(parts[1], out month)
+                && int.TryParse(parts[2], out year)
+                && IsValidDate(day, month, year);
         }
     }
 }
